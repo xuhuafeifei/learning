@@ -29,7 +29,7 @@ export class LLMClient {
     return new LLMMessage(data);
   }
 
-  async * stream(inputMessage: string): AsyncGenerator<LLMMessage> {
+  async *stream(inputMessage: string): AsyncGenerator<LLMMessage> {
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
@@ -51,26 +51,25 @@ export class LLMClient {
     let buffer = "";
 
     for await (const chunk of response.body ?? []) {
-        const text = decoder.decode(chunk, { stream: true });
-        buffer += text;
+      const text = decoder.decode(chunk, { stream: true });
+      buffer += text;
 
-        const lines = buffer.split("\n")
-        // 取出第一条, 并清空之前的内容
-        buffer = lines.pop() ?? "";
+      const lines = buffer.split("\n");
+      // 取出第一条, 并清空之前的内容
+      buffer = lines.pop() ?? "";
 
-        for (const line of lines) {
-            if (!line.startsWith("data: ")) {
-                continue;
-            }
-            if (line === "data: [DONE]") {
-                return;
-            }
-            // 截取数据
-            const data = line.substring(6);
-            yield new LLMMessage(JSON.parse(data));
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) {
+          continue;
         }
+        if (line === "data: [DONE]") {
+          return;
+        }
+        // 截取数据
+        const data = line.substring(6);
+        yield new LLMMessage(JSON.parse(data));
+      }
     }
-    return buffer;
   }
 }
 
