@@ -1,3 +1,6 @@
+/**
+ * 封装 LLM 调用 API，对外提供 promote 接口，获取 LLM 返回输出
+ */
 export class LLMClient {
     private apiKey: string;
 
