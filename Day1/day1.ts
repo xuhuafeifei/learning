@@ -8,9 +8,11 @@ import { LLMClient } from "./client";
 const inputMessage = "你好，我在测试";
 
 async function main() {
-    const client = new LLMClient(process.env.DEEPSEEK_API_KEY);
-    const message = await client.prompt(inputMessage);
-    console.log(JSON.stringify(message, null, 2));
+  const client = new LLMClient(process.env.DEEPSEEK_API_KEY);
+  const message = await client.stream(inputMessage);
+  for await (const chunk of message) {
+    console.log(JSON.stringify(chunk, null, 2));
+  }
 }
 
 main();
