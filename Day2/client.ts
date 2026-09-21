@@ -13,10 +13,7 @@ export class LLMClient {
     this.tools = tools;
   }
 
-  async prompt(
-    inputMessage: string,
-    context: Context[] = [],
-  ): Promise<LLMMessage> {
+  async prompt(context: Context[] = []): Promise<LLMMessage> {
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
@@ -28,7 +25,6 @@ export class LLMClient {
         messages: [
           { role: "system", content: "you are a helpful assistant" },
           ...context,
-          { role: "user", content: inputMessage },
         ],
         thinking: { type: "enabled" },
         reasoning_effort: "low",
@@ -39,10 +35,7 @@ export class LLMClient {
     return new LLMMessage(data);
   }
 
-  async *stream(
-    inputMessage: string,
-    context: Context[] = [],
-  ): AsyncGenerator<LLMMessage> {
+  async *stream(context: Context[] = []): AsyncGenerator<LLMMessage> {
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
@@ -54,7 +47,6 @@ export class LLMClient {
         messages: [
           { role: "system", content: "you are a helpful assistant" },
           ...context,
-          { role: "user", content: inputMessage },
         ],
         thinking: { type: "enabled" },
         reasoning_effort: "low",
@@ -82,6 +74,8 @@ export class LLMClient {
         }
         // 截取数据
         const data = line.substring(6);
+        // debug
+        // console.log(data);
         yield new LLMMessage(JSON.parse(data));
       }
     }
@@ -118,11 +112,15 @@ export class Delta {
   public content: string;
   public role: string;
   public reasoning_content: string;
+  public tool_calls: ToolCall[];
 
   constructor(data: any) {
     this.content = data?.content ?? "";
     this.role = data?.role ?? "";
     this.reasoning_content = data?.reasoning_content ?? "";
+    this.tool_calls =
+      data?.tool_calls?.map((tool_call: any) => new ToolCall(tool_call)) ??
+      ([] as ToolCall[]);
   }
 }
 

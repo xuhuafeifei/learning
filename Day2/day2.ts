@@ -12,7 +12,7 @@ async function main() {
   const agent = new Agent(process.env.DEEPSEEK_API_KEY ?? "", [
     getWeatherToolSchema,
   ]);
-  await agent.run(inputMessage);
+  await agent.streamRun(inputMessage);
 }
 
 main();

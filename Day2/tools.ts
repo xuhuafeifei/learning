@@ -35,7 +35,6 @@ export const getWeatherToolSchema: ToolSchema = {
   execute: getWeatherTool,
 };
 
-export function getWeatherTool(args: any) {
-  const location = args.location;
-  return "The weather in " + location + " is sunny.";
+export function getWeatherTool(args: { location: string }) {
+  return "The weather in " + args.location + " is sunny.";
 }
