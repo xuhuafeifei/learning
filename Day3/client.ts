@@ -66,7 +66,7 @@ export class LLMClient {
     let buffer = "";
 
     for await (const chunk of response.body ?? []) {
-      // 防御
+      // 防御, agent代码异常，导致服务端返回数据异常
       if (response.status !== 200) {
         throw new Error(
           `HTTP error: ${response.status}, ${response.statusText}, ${decoder.decode(chunk, { stream: true })}`,

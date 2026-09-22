@@ -60,7 +60,7 @@ export class Agent {
       context.push({
         role: "tool",
         tool_call_id: toolCall.id,
-        content: toolResult ?? "",
+        content: JSON.stringify(toolResult) ?? "",
       });
     }
   }
@@ -134,7 +134,7 @@ export class Agent {
             context.push({
               role: "tool",
               tool_call_id: tool_call.id,
-              // 需要反序列化，不然会报错
+              // 需要stringify，不然会报错，导致API Server反序列化失败
               content: JSON.stringify(toolResult) ?? "",
             });
           } else if (finish_reason === "stop") {
