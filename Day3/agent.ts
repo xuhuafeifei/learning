@@ -1,4 +1,4 @@
-import { LLMClient, LLMMessage, ToolCall } from "./client";
+import { LLMClient, ToolCall } from "./client";
 import { ToolSchema } from "./tools";
 
 interface AssistantContext {
@@ -21,21 +21,27 @@ interface ToolContext {
 export type Context = UserContext | ToolContext | AssistantContext;
 
 export class Agent {
-  private client: LLMClient;
   private tools: ToolSchema[];
   private maxLoop: number = 20;
+  private apiKey: string;
+  private client: LLMClient | null = null;
 
   constructor(apiKey: string, tools: ToolSchema[]) {
-    this.client = new LLMClient(apiKey, tools);
     this.tools = tools;
+    this.apiKey = apiKey;
   }
 
-  async run(inputMessage: string) {
-    const context: Context[] = [{ role: "user", content: inputMessage }];
+  abort() {
+    if (this.client) {
+      console.log("abort!!!!");
+      this.client.abort();
+      console.log("abort success!!!!");
+    }
+  }
+
+  private async doRun(context: Context[], client: LLMClient) {
     for (let loop = 0; loop < this.maxLoop; loop++) {
-      const message = await this.client.prompt(context);
-      // 输出当前消息
-      console.log(JSON.stringify(message, null, 2));
+      const message = await client.prompt(context);
 
       if (message?.choices?.[0]?.finish_reason !== "tool_calls") {
         break;
@@ -59,16 +65,39 @@ export class Agent {
     }
   }
 
-  async streamRun(inputMessage: string) {
+  async tryWithException(fn: () => Promise<any>) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        console.log("run aborted by user");
+      } else {
+        console.error("run error: ", error);
+      }
+    } finally {
+      if (this.client) {
+        this.client.abort();
+        this.client = null;
+      }
+    }
+  }
+
+  async run(inputMessage: string) {
     const context: Context[] = [{ role: "user", content: inputMessage }];
+    return await this.tryWithException(() => {
+      this.client = new LLMClient(this.apiKey, this.tools);
+      return this.doRun(context, this.client!);
+    });
+  }
+
+  private async doStreamRun(context: Context[], client: LLMClient) {
     for (let loop = 0; loop < this.maxLoop; loop++) {
-      const messages = await this.client.stream(context);
       let reasoning_buffer = "";
       let content_buffer = "";
       let tool_call: ToolCall | null = null;
       let arguments_buffer = "";
 
-      for await (const message of messages) {
+      for await (const message of client.stream(context)) {
         const finish_reason = message.choices[0].finish_reason;
         const delta = message.choices[0].delta;
         // delta累加
@@ -105,7 +134,8 @@ export class Agent {
             context.push({
               role: "tool",
               tool_call_id: tool_call.id,
-              content: toolResult ?? "",
+              // 需要反序列化，不然会报错
+              content: JSON.stringify(toolResult) ?? "",
             });
           } else if (finish_reason === "stop") {
             return;
@@ -115,17 +145,33 @@ export class Agent {
     }
   }
 
+  async streamRun(inputMessage: string) {
+    const context: Context[] = [{ role: "user", content: inputMessage }];
+    return await this.tryWithException(
+      () => {
+        this.client = new LLMClient(this.apiKey, this.tools);
+        return this.doStreamRun(context, this.client!);
+      },
+    );
+  }
+
   // 工具执行异常处理
   async doExecute(toolCall: ToolCall) {
-    const tool = this.tools.find((tool) => tool.function.name === toolCall.function.name);
+    const tool = this.tools.find(
+      (tool) => tool.function.name === toolCall.function.name,
+    );
     if (!tool) {
       return `Tool ${toolCall.function.name} not found`;
     }
     try {
+      // 工具解析成 obj
       return await tool.execute(JSON.parse(toolCall.function.arguments));
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`Tool ${toolCall.function.name} execute error: ${errorMessage}`);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        `Tool ${toolCall.function.name} execute error: ${errorMessage}`,
+      );
       return `Tool ${toolCall.function.name} execute error: ${errorMessage}`;
     }
   }

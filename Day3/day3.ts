@@ -19,6 +19,10 @@ async function main() {
     lsToolSchema,
     writeFileToolSchema,
   ]);
+  // 来一个定时器，4 秒后，调用agent.abort()
+  // setTimeout(() => {
+  //   agent.abort();
+  // }, 9000);
   await agent.streamRun(inputMessage);
 }
 

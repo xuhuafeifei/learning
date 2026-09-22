@@ -7,10 +7,16 @@ import { ToolSchema } from "./tools";
 export class LLMClient {
   private apiKey: string;
   private tools: ToolSchema[];
+  private controller: AbortController;
 
   constructor(apiKey: string, tools: ToolSchema[] = []) {
     this.apiKey = apiKey;
     this.tools = tools;
+    this.controller = new AbortController();
+  }
+
+  abort() {
+    this.controller.abort();
   }
 
   async prompt(context: Context[] = []): Promise<LLMMessage> {
@@ -30,6 +36,7 @@ export class LLMClient {
         reasoning_effort: "low",
         tools: this.tools,
       }),
+      signal: this.controller.signal,
     });
     const data = await response.json();
     return new LLMMessage(data);
@@ -53,6 +60,7 @@ export class LLMClient {
         stream: true,
         tools: this.tools,
       }),
+      signal: this.controller.signal,
     });
     const decoder = new TextDecoder();
     let buffer = "";
@@ -60,9 +68,11 @@ export class LLMClient {
     for await (const chunk of response.body ?? []) {
       // 防御
       if (response.status !== 200) {
-        throw new Error(`HTTP error: ${response.status}, ${response.statusText}, ${decoder.decode(chunk, { stream: true })}`);
+        throw new Error(
+          `HTTP error: ${response.status}, ${response.statusText}, ${decoder.decode(chunk, { stream: true })}`,
+        );
       }
-      
+
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
 
@@ -80,18 +90,17 @@ export class LLMClient {
         }
         // 截取数据
         const data = line.substring(6);
-        console.log("data: ", data);
         try {
           yield new LLMMessage(JSON.parse(data));
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           throw new Error(`JSON.parse error: "${data}", ${errorMessage}`);
         }
       }
     }
     // buffer 数据清理
     if (buffer.trim()) {
-
     }
   }
 }
