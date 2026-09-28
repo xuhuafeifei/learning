@@ -1,10 +1,25 @@
 import { ToolCall } from "./client";
 import fs from "fs";
 
+export interface ContextManager {
+  add(context: Context): void;
+  get(): Context[];
+}
+
+export class MemoryContextManager implements ContextManager {
+  private contexts: Context[] = [];
+  add(context: Context) {
+    this.contexts.push(context);
+  }
+  get() {
+    return [...this.contexts];
+  }
+}
+
 // context != memory
 // context 是上下文，memory 是记忆
 // ContextManager 是上下文管理器，用于管理上下文, 维护运行时的上下文信息，同时管理应当持久化哪些上下文
-export class ContextManager {
+export class PersistentContextManager implements ContextManager {
   private contexts: Context[] = [];
   private filename: string = "./context.jsonl";
 
@@ -26,19 +41,16 @@ export class ContextManager {
 
   add(context: Context) {
     // 只持久化 assistant ,user, tool
-    if (context.role !== "assistant" && context.role !== "user" && context.role !== "tool") {
+    if (
+      context.role !== "assistant" &&
+      context.role !== "user" &&
+      context.role !== "tool"
+    ) {
       return;
     }
     this.contexts.push(context);
     // 追加到文件
     fs.appendFileSync(this.filename, JSON.stringify(context) + "\n");
-  }
-
-  addToMemory(context: Context) {
-    if (context.role !== "assistant" && context.role !== "user" && context.role !== "tool") {
-      return;
-    }
-    this.contexts.push(context);
   }
 
   get() {

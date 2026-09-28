@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { LLMClient, ToolCall } from "./client";
-import { ContextManager } from "./context";
+import {
+  ContextManager,
+  MemoryContextManager,
+  PersistentContextManager,
+} from "./context";
 import { ToolSchema } from "./tools";
+import { c } from "./utils";
 
 export class Agent {
   private tools: ToolSchema[];
@@ -81,7 +86,7 @@ export class Agent {
   }
 
   async run(inputMessage: string) {
-    const contextManager = new ContextManager();
+    const contextManager = new PersistentContextManager();
     contextManager.add({ role: "user", content: inputMessage });
     return await this.tryWithException(() => {
       this.client = new LLMClient(this.apiKey, this.tools);
@@ -89,7 +94,10 @@ export class Agent {
     });
   }
 
-  private async doStreamRun(contextManager: ContextManager, client: LLMClient) {
+  private async doStreamRun(
+    contextManager: ContextManager,
+    client: LLMClient,
+  ): Promise<string> {
     for (let loop = 0; loop < this.maxLoop; loop++) {
       let reasoning_buffer = "";
       let content_buffer = "";
@@ -107,6 +115,8 @@ export class Agent {
           reasoning_buffer += delta.reasoning_content;
           if (last !== "reasoning_content") {
             process.stdout.write("\n");
+            process.stdout.write(c.reset);
+            process.stdout.write(c.yellow);
           }
           process.stdout.write(delta.reasoning_content);
           last = "reasoning_content";
@@ -114,6 +124,7 @@ export class Agent {
         if (delta.content) {
           content_buffer += delta.content;
           if (last !== "content") {
+            process.stdout.write(c.reset);
             process.stdout.write("\n");
           }
           process.stdout.write(delta.content);
@@ -128,6 +139,8 @@ export class Agent {
           arguments_buffer += delta.tool_calls[0].function.arguments;
           if (last !== "tool_calls") {
             process.stdout.write("\n");
+            process.stdout.write(c.reset);
+            process.stdout.write(c.blue);
           }
           process.stdout.write(delta.tool_calls[0].function.arguments);
           last = "tool_calls";
@@ -155,15 +168,17 @@ export class Agent {
               reasoning_content: reasoning_buffer,
               content: content_buffer,
             });
-            return;
+            console.log();
+            return content_buffer;
           }
         }
       }
     }
+    throw new Error("max loop exceeded");
   }
 
   async streamRun(inputMessage: string) {
-    const contextManager = new ContextManager();
+    const contextManager = new PersistentContextManager();
     contextManager.add({ role: "user", content: inputMessage });
     return await this.tryWithException(() => {
       this.client = new LLMClient(this.apiKey, this.tools);
@@ -175,7 +190,7 @@ export class Agent {
     inputMessage: string,
     schema: T,
   ): Promise<z.infer<T>> {
-    const contextManager = new ContextManager();
+    const contextManager = new PersistentContextManager();
     const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
     // 结构化输出，规范输出内容
     contextManager.add({
@@ -191,18 +206,22 @@ export class Agent {
     });
     // doStructRun流
     const result = await this.tryWithException(() => {
-      this.client = new LLMClient(this.apiKey, this.tools);
+      this.client = new LLMClient(this.apiKey);
       return this.doStructRun(content, schema, this.client!);
     });
     return result;
   }
 
-  async doStructRun(content: string, schema: z.ZodType, client: LLMClient) {
+  private async doStructRun(
+    content: string,
+    schema: z.ZodType,
+    client: LLMClient,
+  ) {
     let jsonText = content
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/, "")
       .trim();
-    const contextManager = new ContextManager();
+    const contextManager = new MemoryContextManager();
     for (let i = 0; i < 3; i++) {
       try {
         return schema.parse(JSON.parse(jsonText));
@@ -210,14 +229,93 @@ export class Agent {
         console.log(
           `解析错误: ${i + 1}次, error: ${error}, jsonText: ${jsonText}`,
         );
-        contextManager.addToMemory({
+        contextManager.add({
           role: "user",
-          content: `Json 解析错误: ${error} 请将以下内容解析为 JSON 对象，并返回 JSON 对象: ${jsonText}
+          content: `Json 解析错误: ${error} 请将以下内容提取为纯粹的JSON文本，不要包含任何和 json 无关的其他信息: ${jsonText}
           \n\n数据格式为: ${JSON.stringify(z.toJSONSchema(schema))}
           \n\n请重新解析，并返回 JSON 对象`,
         });
         const message = await client.prompt(contextManager.get());
         jsonText = message?.choices?.[0]?.message?.content ?? "";
+      }
+    }
+    throw new Error("解析错误，重试3次失败");
+  }
+
+  async streamStructRun<T extends z.ZodType>(
+    inputMessage: string,
+    schema: T,
+  ): Promise<z.infer<T>> {
+    const contextManager = new PersistentContextManager();
+    const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
+    contextManager.add({
+      role: "user",
+      content:
+        `${inputMessage}\n\n` +
+        `Please return the result as a single JSON object matching this schema:\n${jsonSchema}`,
+    });
+    const content = await this.tryWithException(() => {
+      this.client = new LLMClient(this.apiKey, this.tools);
+      return this.doStreamRun(contextManager, this.client!);
+    });
+
+    return await this.tryWithException(() => {
+      this.client = new LLMClient(this.apiKey);
+      return this.doStreamStructRun(content, schema, this.client!);
+    });
+  }
+
+  private async doStreamStructRun(
+    content: string,
+    schema: z.ZodType,
+    client: LLMClient,
+  ) {
+    let jsonText = content
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "")
+      .trim();
+    const contextManager = new MemoryContextManager();
+    for (let i = 0; i < 3; i++) {
+      try {
+        return schema.parse(JSON.parse(jsonText));
+      } catch (error) {
+        console.error(
+          `\n${c.red}解析错误: ${i + 1}次, error: ${error}, jsonText: ${jsonText}${c.reset}\n`,
+        );
+        contextManager.add({
+          role: "user",
+          content: `Json 第 ${i + 1}次解析错误: ${error} 请将以下内容提取为纯粹的JSON文本，不要包含任何和 json 无关的其他信息: ${jsonText}
+          \n\n数据格式为: ${JSON.stringify(z.toJSONSchema(schema))}
+          \n\n请重新提取，并返回 JSON 文本`,
+        });
+        let last = "";
+        let content_buffer = "";
+        let reasoning_buffer = "";
+
+        for await (const message of client.stream(contextManager.get())) {
+          const choice = message.choices[0];
+          const delta = choice.delta;
+          if (delta.content) {
+            content_buffer += delta.content;
+            if (last !== "content") {
+              process.stdout.write("\n");
+            }
+            process.stdout.write(delta.content);
+            last = "content";
+          }
+          if (delta.reasoning_content) {
+            reasoning_buffer += delta.reasoning_content;
+            if (last !== "reasoning_content") {
+              process.stdout.write("\n");
+            }
+            process.stdout.write(delta.reasoning_content);
+            last = "reasoning_content";
+          }
+        }
+
+        console.log();
+        console.log(`${c.red}content_buffer: ${content_buffer}${c.reset}`);
+        jsonText = content_buffer;
       }
     }
     throw new Error("解析错误，重试3次失败");

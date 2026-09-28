@@ -30,7 +30,7 @@ async function main() {
       lsToolSchema,
       writeFileToolSchema,
     ]);
-    const result = await agent.structuredRun<typeof schema>(inputMessage, schema);
+    const result = await agent.streamStructRun<typeof schema>(inputMessage, schema);
     console.log("结果是: ", result);
     rl.close();
   }
