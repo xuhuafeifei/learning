@@ -34,6 +34,13 @@ export class ContextManager {
     fs.appendFileSync(this.filename, JSON.stringify(context) + "\n");
   }
 
+  addToMemory(context: Context) {
+    if (context.role !== "assistant" && context.role !== "user" && context.role !== "tool") {
+      return;
+    }
+    this.contexts.push(context);
+  }
+
   get() {
     return [...this.contexts];
   }

@@ -177,43 +177,50 @@ export class Agent {
   ): Promise<z.infer<T>> {
     const contextManager = new ContextManager();
     const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
+    // 结构化输出，规范输出内容
     contextManager.add({
       role: "user",
       content:
         `${inputMessage}\n\n` +
         `Please return the result as a single JSON object matching this schema:\n${jsonSchema}`,
     });
-    return await this.tryWithException(async () => {
+    // doRun流
+    const content = await this.tryWithException(() => {
       this.client = new LLMClient(this.apiKey, this.tools);
-      const content = await this.doRun(contextManager, this.client!);
-      let jsonText = content
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/\s*```$/, "")
-        .trim();
-      // 如果解析错误，需要累加到上下文，并要求 LLM 重新执行
-      for (let i = 0; i < 3; i++) {
-        try {
-          return schema.parse(JSON.parse(jsonText));
-        } catch (error) {
-          console.log(
-            `解析错误: ${i + 1}次, error: ${error}, jsonText: ${jsonText}`,
-          );
-          if (error instanceof Error) {
-            contextManager.add({
-              role: "user",
-              content: `解析错误，请重新执行: ${error.message}\n\n${jsonText}`,
-            });
-          }
-          // 重新执行
-          const content = await this.doRun(contextManager, this.client!);
-          jsonText = content
-            .replace(/^```(?:json)?\s*/i, "")
-            .replace(/\s*```$/, "")
-            .trim();
-        }
-      }
-      throw new Error("解析错误，重试3次失败");
+      return this.doRun(contextManager, this.client!);
     });
+    // doStructRun流
+    const result = await this.tryWithException(() => {
+      this.client = new LLMClient(this.apiKey, this.tools);
+      return this.doStructRun(content, schema, this.client!);
+    });
+    return result;
+  }
+
+  async doStructRun(content: string, schema: z.ZodType, client: LLMClient) {
+    let jsonText = content
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "")
+      .trim();
+    const contextManager = new ContextManager();
+    for (let i = 0; i < 3; i++) {
+      try {
+        return schema.parse(JSON.parse(jsonText));
+      } catch (error) {
+        console.log(
+          `解析错误: ${i + 1}次, error: ${error}, jsonText: ${jsonText}`,
+        );
+        contextManager.addToMemory({
+          role: "user",
+          content: `Json 解析错误: ${error} 请将以下内容解析为 JSON 对象，并返回 JSON 对象: ${jsonText}
+          \n\n数据格式为: ${JSON.stringify(z.toJSONSchema(schema))}
+          \n\n请重新解析，并返回 JSON 对象`,
+        });
+        const message = await client.prompt(contextManager.get());
+        jsonText = message?.choices?.[0]?.message?.content ?? "";
+      }
+    }
+    throw new Error("解析错误，重试3次失败");
   }
 
   // 工具执行异常处理
