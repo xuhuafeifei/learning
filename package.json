@@ -4,6 +4,7 @@
     "tsx": "^4.23.15"
   },
   "dependencies": {
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "zod": "^4.6.5"
   }
 }
