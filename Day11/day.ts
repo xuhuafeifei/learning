@@ -5,8 +5,24 @@ import { VectorResult, VectorStore } from "../Day10/vectorStore";
 import { Embedding } from "../Day8/embedding";
 import { Chunker, FiftyCharacterChunkingStrategy } from "../Day9/chunk";
 import { ToolSchema } from "../Day7/tools";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import fs from "node:fs";
+
+const vectorStore = new VectorStore(
+  await Embedding.init(),
+  new Chunker(),
+  new FiftyCharacterChunkingStrategy(),
+);
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const txtFilePath = path.join(__dirname, "../text/txt.md");
+const txtContent = fs.readFileSync(txtFilePath, "utf-8");
 
 async function main() {
+  // 读取文件，写入 vectorStore
+  // await vectorStore.add(txtContent, "default");
+
   while (true) {
     const rl = await readline.createInterface({ input, output });
     const inputMessage = await rl.question("请输入你的问题: ");
@@ -29,12 +45,6 @@ async function main() {
 
 main().catch(console.error);
 
-const vectorStore = new VectorStore(
-  await Embedding.init(),
-  new Chunker(),
-  new FiftyCharacterChunkingStrategy(),
-);
-
 // 创建 schema，用于调用 vectore store 工具
 const searchToolSchema: ToolSchema = {
   type: "function",
@@ -55,9 +65,9 @@ const searchToolSchema: ToolSchema = {
   execute: searchTool,
 };
 
-async function searchTool(
-  args: { query: string },
-): Promise<Omit<VectorResult, "vector">[]> {
+async function searchTool(args: {
+  query: string;
+}): Promise<Omit<VectorResult, "vector">[]> {
   const result = await vectorStore.query(args.query, "default", 10);
   // 屏蔽 result 的 vector 字段
   return result.map(({ vector: _, ...rest }) => rest);
