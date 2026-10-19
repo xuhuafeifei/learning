@@ -29,7 +29,7 @@ export class LLMClient {
       body: JSON.stringify({
         model: "deepseek-chat",
         messages: [
-          { role: "system", content: "you are a helpful assistant" },
+          { role: "system", content: "you are a helpful assistant, you can read knowledge base in current system for your answer, you can read it by function tool" },
           ...context,
         ],
         thinking: { type: "enabled" },
@@ -52,7 +52,7 @@ export class LLMClient {
       body: JSON.stringify({
         model: "deepseek-chat",
         messages: [
-          { role: "system", content: "you are a helpful assistant" },
+          { role: "system", content: "you are a helpful assistant, you can read knowledge base in current system for your answer, you can read it by function tool" },
           ...context,
         ],
         thinking: { type: "enabled" },

@@ -24,6 +24,7 @@ export class Vector {
   public vector: number[];
   public space: string;
   public hash: string;
+  public sourcePath: string;
 
   constructor(
     id: number,
@@ -31,12 +32,14 @@ export class Vector {
     vector: number[],
     space: string,
     hash: string,
+    sourcePath: string,
   ) {
     this.id = id;
     this.content = content;
     this.vector = vector;
     this.space = space;
     this.hash = hash;
+    this.sourcePath = sourcePath;
   }
 }
 
@@ -47,6 +50,7 @@ export class VectorResult {
   public space: string;
   public similarity: number;
   public hash: string;
+  public sourcePath: string;
 
   constructor(
     id: number,
@@ -55,6 +59,7 @@ export class VectorResult {
     space: string,
     similarity: number,
     hash: string,
+    sourcePath: string,
   ) {
     this.id = id;
     this.content = content;
@@ -62,6 +67,7 @@ export class VectorResult {
     this.space = space;
     this.similarity = similarity;
     this.hash = hash;
+    this.sourcePath = sourcePath;
   }
 }
 
@@ -109,7 +115,7 @@ export class VectorStore {
   }
 
   // 新增数据
-  public async add(content: string, space: string) {
+  public async add(content: string, space: string, sourcePath: string) {
     const chunks = this.chunker.chunk(content, this.strategy);
     // content切片
     for (const chunk of chunks) {
@@ -123,6 +129,7 @@ export class VectorStore {
         vector: [...(await this.embedding.generateEmbedding(chunk))],
         space: space,
         hash,
+        sourcePath,
       };
       this.data.push(newData);
       this.hashes.add(hash);
@@ -153,6 +160,7 @@ export class VectorStore {
         space: item.space,
         similarity: similarity,
         hash: item.hash,
+        sourcePath: item.sourcePath ?? "",
       };
     });
     // 排序，找到最相似的数据

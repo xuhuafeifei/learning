@@ -17,7 +17,7 @@ async function main() {
   const strategy = new FiftyCharacterChunkingStrategy();
   const vectorStore = new VectorStore(embedding, chunker, strategy);
 
-  await vectorStore.add(txtContent, "default");
+  await vectorStore.add(txtContent, "default", txtFilePath);
   console.log("存储完成");
 
   const rl = readline.createInterface({
@@ -33,7 +33,7 @@ async function main() {
       break;
     }
     const result = (await vectorStore.query(query, "default"))[0];
-    console.log(result.content, result.similarity);
+    console.log(result.sourcePath, result.content, result.similarity);
   }
 
   rl.close();
