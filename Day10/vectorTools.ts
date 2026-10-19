@@ -1,3 +1,4 @@
+import path from "path";
 import { ToolSchema } from "../Day7/tools";
 import { VectorResult, VectorStore } from "./vectorStore";
 
@@ -26,6 +27,14 @@ export function createSearchToolSchema(
       query: string;
     }): Promise<Omit<VectorResult, "vector">[]> => {
       const result = await vectorStore.query(args.query, space, topK);
+      console.log(`\n[search] "${args.query}"`);
+      for (const item of result) {
+        const article = path.basename(item.sourcePath || "");
+        const snippet = item.content.replace(/\s+/g, " ").slice(0, 40);
+        console.log(
+          `  ${item.similarity.toFixed(4)}  ${article}  "${snippet}..."`,
+        );
+      }
       return result.map(({ vector: _, ...rest }) => rest);
     },
   };

@@ -47,23 +47,22 @@ export class Agent {
         });
         return choice.message.content ?? "";
       }
-      // 工具调用
-      const toolCall = choice.message.tool_calls[0] as ToolCall;
-      // 获取工具结果
-      const toolResult = await this.doExecute(toolCall);
-      // 1. 先把 assistant 的 tool_calls 消息推进去
+      // 工具调用：一次可能并行多个，每个都要回 tool 消息
+      const toolCalls = choice.message.tool_calls as ToolCall[];
       contextManager.add({
         role: "assistant",
         content: choice.message.content ?? "",
         reasoning_content: choice.message.reasoning_content ?? "",
-        tool_calls: choice.message.tool_calls,
+        tool_calls: toolCalls,
       });
-      // 累加到上下文
-      contextManager.add({
-        role: "tool",
-        tool_call_id: toolCall.id,
-        content: JSON.stringify(toolResult) ?? "",
-      });
+      for (const toolCall of toolCalls) {
+        const toolResult = await this.doExecute(toolCall);
+        contextManager.add({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(toolResult) ?? "",
+        });
+      }
     }
     throw new Error("max loop exceeded");
   }
@@ -101,8 +100,8 @@ export class Agent {
     for (let loop = 0; loop < this.maxLoop; loop++) {
       let reasoning_buffer = "";
       let content_buffer = "";
-      let tool_call: ToolCall | null = null;
-      let arguments_buffer = "";
+      const toolCalls = new Map<number, ToolCall>();
+      const argumentBuffers = new Map<number, string>();
       let last = "";
 
       // console.log("contextManager.get(): ", contextManager.get());
@@ -131,37 +130,62 @@ export class Agent {
           last = "content";
         }
         if (delta.tool_calls && delta.tool_calls.length > 0) {
-          if (delta.tool_calls[0].id) {
-            // 第一轮 sse，存储完整 toolcall
-            tool_call = delta.tool_calls[0];
+          for (const deltaCall of delta.tool_calls) {
+            const index = deltaCall.index ?? 0;
+            let call = toolCalls.get(index);
+            if (!call) {
+              call = deltaCall;
+              toolCalls.set(index, call);
+              argumentBuffers.set(index, "");
+            }
+            if (deltaCall.id) {
+              call.id = deltaCall.id;
+            }
+            if (deltaCall.function?.name) {
+              call.function.name = deltaCall.function.name;
+            }
+            const args =
+              typeof deltaCall.function?.arguments === "string"
+                ? deltaCall.function.arguments
+                : "";
+            if (!args) {
+              continue;
+            }
+            argumentBuffers.set(index, (argumentBuffers.get(index) ?? "") + args);
+            const printing = `tool_calls:${index}`;
+            if (last !== printing) {
+              process.stdout.write("\n");
+              process.stdout.write(c.reset);
+              process.stdout.write(c.blue);
+            }
+            process.stdout.write(args);
+            last = printing;
           }
-          // 累加 arguments
-          arguments_buffer += delta.tool_calls[0].function.arguments;
-          if (last !== "tool_calls") {
-            process.stdout.write("\n");
-            process.stdout.write(c.reset);
-            process.stdout.write(c.blue);
-          }
-          process.stdout.write(delta.tool_calls[0].function.arguments);
-          last = "tool_calls";
         }
         // 如果为 null，表示还是sse
         if (finish_reason) {
-          if (finish_reason === "tool_calls" && tool_call) {
-            tool_call.function.arguments = arguments_buffer;
-            const toolResult = await this.doExecute(tool_call);
+          if (finish_reason === "tool_calls" && toolCalls.size > 0) {
+            const calls = [...toolCalls.entries()]
+              .sort((a, b) => a[0] - b[0])
+              .map(([index, call]) => {
+                call.function.arguments = argumentBuffers.get(index) ?? "";
+                return call;
+              });
             contextManager.add({
               role: "assistant",
               reasoning_content: reasoning_buffer,
               content: content_buffer,
-              tool_calls: [tool_call],
+              tool_calls: calls,
             });
-            contextManager.add({
-              role: "tool",
-              tool_call_id: tool_call.id,
-              // 需要stringify，不然会报错，导致API Server反序列化失败
-              content: JSON.stringify(toolResult) ?? "",
-            });
+            for (const call of calls) {
+              const toolResult = await this.doExecute(call);
+              contextManager.add({
+                role: "tool",
+                tool_call_id: call.id,
+                // 需要stringify，不然会报错，导致API Server反序列化失败
+                content: JSON.stringify(toolResult) ?? "",
+              });
+            }
           } else if (finish_reason === "stop") {
             contextManager.add({
               role: "assistant",

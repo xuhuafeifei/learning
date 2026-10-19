@@ -146,7 +146,7 @@ export class VectorStore {
   ): Promise<VectorResult[]> {
     const result = this.data.filter((item) => item.space === space);
     // 通过向量距离，查询最相似的数据
-    const queryVector = await this.embedding.generateEmbedding(query);
+    const queryVector = await this.embedding.generateQueryEmbedding(query);
     // 在剩下的 result 中，计算向量距离，找到最相似的数据
     const similarData: VectorResult[] = result.map((item) => {
       const similarity = this.embedding.calculateSimilarityByEmbedding(

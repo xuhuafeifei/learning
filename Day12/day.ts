@@ -11,7 +11,7 @@ import { Embedding } from "../Day8/embedding";
 import { Agent } from "../Day7/agent";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.join(__dirname, "../data");
+const dataDir = path.join(__dirname, "../data2");
 
 const vectorStore = new VectorStore(
   await Embedding.init(),

@@ -8,6 +8,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const QUERY_PREFIX = "为这个句子生成表示以用于检索相关文章：";
 
 export class Embedding {
   private llama: Llama;
@@ -33,11 +34,15 @@ export class Embedding {
     const model = await llama.loadModel({
       modelPath: path.join(
         __dirname,
-        "../model/nomic-embed-text-v1.5.Q4_K_M.gguf",
+        "../model/bge-small-zh-v1.5-q4_k_m.gguf",
       ),
     });
     const context = await model.createEmbeddingContext();
     return new Embedding(llama, model, context);
+  }
+
+  async generateQueryEmbedding(text: string): Promise<readonly number[]> {
+    return this.generateEmbedding(QUERY_PREFIX + text);
   }
 
   async generateEmbedding(text: string): Promise<readonly number[]> {
@@ -88,14 +93,10 @@ export class Embedding {
     input: string,
     targetList: readonly string[],
   ): Promise<{ target: string; similarity: number }[]> {
-    const inputEmbedding = await this.generateEmbedding(
-      `search_query: ${input}`,
-    );
+    const inputEmbedding = await this.generateQueryEmbedding(input);
     const similarityList = await Promise.all(
       targetList.map(async (target) => {
-        const targetEmbedding = await this.generateEmbedding(
-          `search_document: ${target}`,
-        );
+        const targetEmbedding = await this.generateEmbedding(target);
         const similarity = this.calculateSimilarityByEmbedding(
           inputEmbedding,
           targetEmbedding,
